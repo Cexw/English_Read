@@ -2,7 +2,9 @@
   'use strict';
 
   var STORAGE_PROGRESS = 'pep-words-progress-v1';
+  var STORAGE_MEMORIZED = 'pep-words-memorized-v1';
   var STORAGE_BOOK = 'pep-words-book';
+  var FILTER_LABEL = { all: '全部词条', unmemorized: '未背诵', memorized: '已背诵' };
   var KIND_LABEL = { 0: '重点词', 1: '一般词汇', 2: '短语', 3: '专有名词' };
   var ACCENT_LABEL = { uk: '英式', us: '美式' };
 
@@ -20,8 +22,13 @@
     progressCount: document.getElementById('progressCount'),
     progressTotal: document.getElementById('progressTotal'),
     progressBar: document.getElementById('progressBar'),
+    memorizedCount: document.getElementById('memorizedCount'),
+    memorizedTotal: document.getElementById('memorizedTotal'),
+    memorizedBar: document.getElementById('memorizedBar'),
+    filters: document.querySelectorAll('.filter-chip'),
     unreadOnly: document.getElementById('unreadOnly'),
     resetProgress: document.getElementById('resetProgress'),
+    dialogMemorize: document.getElementById('dialogMemorize'),
     wordList: document.getElementById('wordList'),
     toast: document.getElementById('toast'),
     dialog: document.getElementById('wordDialog'),
@@ -48,11 +55,14 @@
   var data = window.PEP_WORDS;
   var readSets = new Map();
   var progressStore = {};
+  var memorizedSets = new Map();
+  var memorizedStore = {};
   var rowById = new Map();
   var state = {
     bookId: null,
     query: '',
     unreadOnly: false,
+    filter: 'all',
     visibleWords: [],
     activeUnitKey: null
   };
@@ -107,15 +117,35 @@
     return readSets.get(bookId);
   }
 
-  function saveProgress() {
+  function getMemorizedSet(bookId) {
+    if (!memorizedSets.has(bookId)) {
+      var saved = memorizedStore[bookId];
+      memorizedSets.set(bookId, new Set(Array.isArray(saved) ? saved : []));
+    }
+    return memorizedSets.get(bookId);
+  }
+
+  function serializeSets(store) {
     var output = {};
-    readSets.forEach(function (set, bookId) {
+    store.forEach(function (set, bookId) {
       if (set.size) output[bookId] = Array.from(set);
     });
+    return JSON.stringify(output);
+  }
+
+  function saveProgress() {
     try {
-      localStorage.setItem(STORAGE_PROGRESS, JSON.stringify(output));
+      localStorage.setItem(STORAGE_PROGRESS, serializeSets(readSets));
     } catch (error) {
       /* Progress is still kept in memory when storage is unavailable. */
+    }
+  }
+
+  function saveMemorized() {
+    try {
+      localStorage.setItem(STORAGE_MEMORIZED, serializeSets(memorizedSets));
+    } catch (error) {
+      /* Memorized marks are still kept in memory when storage is unavailable. */
     }
   }
 
@@ -135,17 +165,20 @@
     }
   }
 
-  function loadProgress() {
-    var raw = safeStorageGet(STORAGE_PROGRESS);
-    if (!raw) return;
+  function readStore(key) {
+    var raw = safeStorageGet(key);
+    if (!raw) return {};
     try {
       var parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        progressStore = parsed;
-      }
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
     } catch (error) {
-      progressStore = {};
+      return {};
     }
+  }
+
+  function loadProgress() {
+    progressStore = readStore(STORAGE_PROGRESS);
+    memorizedStore = readStore(STORAGE_MEMORIZED);
   }
 
   function prepareBooks() {
@@ -163,8 +196,7 @@
     });
   }
 
-  function countRead(book) {
-    var set = getReadSet(book.id);
+  function countIn(set, book) {
     var count = 0;
     book.units.forEach(function (unit) {
       unit.words.forEach(function (word) {
@@ -172,6 +204,14 @@
       });
     });
     return count;
+  }
+
+  function countRead(book) {
+    return countIn(getReadSet(book.id), book);
+  }
+
+  function countMemorized(book) {
+    return countIn(getMemorizedSet(book.id), book);
   }
 
   function unitKey(book, unit, unitPosition) {
@@ -202,15 +242,26 @@
     return '';
   }
 
-  function wordRow(item, visibleIndex, query, readSet) {
+  function memorizeButton(item, memorized, visibleIndex, wordLabel) {
+    return '<button class="row-memorize" type="button" data-memorize-index="' + visibleIndex + '" ' +
+      'aria-pressed="' + (memorized ? 'true' : 'false') + '" ' +
+      'aria-label="' + escapeHtml(wordLabel + (memorized ? '，已背诵，点击取消标记' : '，未背诵，点击标记为已背诵')) + '" ' +
+      'title="' + (memorized ? '已背诵' : '标记已背诵') + '">' +
+      '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 3.5h10v13l-5-3.2-5 3.2z"></path></svg>' +
+    '</button>';
+  }
+
+  function wordRow(item, visibleIndex, query, readSet, memorizedSet) {
     var word = item.word;
     var read = readSet.has(word.id);
+    var memorized = memorizedSet.has(word.id);
     var ipa = word.ipa
       ? '<span class="ipa">' + escapeHtml(word.ipa) + '</span>'
       : '<span class="ipa is-empty" title="该词条暂无音标">—</span>';
     var meaning = sensesText(word);
 
-    return '<div class="word-row' + (read ? ' read' : '') + '" data-word-id="' + escapeHtml(word.id) + '">' +
+    return '<div class="word-row' + (read ? ' read' : '') + (memorized ? ' memorized' : '') +
+      '" data-word-id="' + escapeHtml(word.id) + '">' +
       '<button class="word-open" type="button" data-index="' + visibleIndex + '" aria-haspopup="dialog" ' +
         'aria-label="查看 ' + escapeHtml(word.w) + ' 的音标、释义和发音">' +
         '<span class="idx">' + pad2(word._bookIndex + 1) + '</span>' +
@@ -225,12 +276,14 @@
         '<svg class="play-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5l10 6.5-10 6.5z"></path></svg>' +
         '<span class="audio-bars" aria-hidden="true"><i></i><i></i><i></i></span>' +
       '</button>' +
+      memorizeButton(item, memorized, visibleIndex, word.w) +
     '</div>';
   }
 
   function buildVisible(book) {
     var query = normalize(state.query.trim());
     var readSet = getReadSet(book.id);
+    var memorizedSet = getMemorizedSet(book.id);
     var sections = [];
     var flat = [];
 
@@ -238,6 +291,8 @@
       var words = [];
       unit.words.forEach(function (word) {
         if (state.unreadOnly && readSet.has(word.id)) return;
+        if (state.filter === 'memorized' && !memorizedSet.has(word.id)) return;
+        if (state.filter === 'unmemorized' && memorizedSet.has(word.id)) return;
         if (query) {
           var haystack = normalize(word.w + ' ' + word.senses.map(function (sense) { return sense.zh; }).join(' '));
           if (haystack.indexOf(query) < 0) return;
@@ -306,26 +361,50 @@
     var query = state.query.trim();
     var searchIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="M16 16l4.5 4.5"></path></svg>';
     var bookIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h9a2 2 0 012 2v14H8a2 2 0 01-2-2V4z"></path><path d="M6 17a2 2 0 012-2h9"></path></svg>';
+    var bookmarkIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10v16l-5-3.2L7 20z"></path></svg>';
 
-    if (query) {
-      var actions = '<button type="button" data-action="clear-search">清除搜索</button>' +
-        (state.unreadOnly ? '<button type="button" data-action="clear-filter">查看全部词条</button>' : '');
-      return '<div class="empty-state">' +
-        '<div class="empty-icon">' + searchIcon + '</div>' +
-        '<h2>没有找到“' + escapeHtml(query) + '”</h2>' +
-        '<p>试试更短的拼写，或者输入中文释义。</p>' +
-        '<div class="empty-actions">' + actions + '</div>' +
-      '</div>';
-    }
+    var hasFilter = state.unreadOnly || state.filter !== 'all';
+    var clearButtons = (state.unreadOnly && state.filter !== 'all'
+      ? '<button type="button" data-action="clear-filter">清除筛选</button>'
+      : '<button type="button" data-action="clear-filter">查看全部词条</button>');
 
-    if (state.unreadOnly) {
-      return '<div class="empty-state">' +
-        '<div class="empty-icon">' + bookIcon + '</div>' +
-        '<h2>本册都点读过了</h2>' +
-        '<p>共 ' + book.total + ' 个词条。可以重置进度，或关闭“只看未读”查看全部。</p>' +
+    var searchEmpty = query
+      ? '<div class="controls"><div class="empty-state">' +
+          '<div class="empty-icon">' + searchIcon + '</div>' +
+          '<h2>没有找到“' + escapeHtml(query) + '”</h2>' +
+          '<p>试试更短的拼写，或者输入中文释义。</p>' +
+          '<div class="empty-actions">' +
+            '<button type="button" data-action="clear-search">清除搜索</button>' +
+            (hasFilter ? clearButtons : '') +
+          '</div>' +
+        '</div></div>'
+      : '';
+
+    if (state.filter === 'memorized' && !query && !state.unreadOnly) {
+      return '<div class="controls"><div class="empty-state">' +
+        '<div class="empty-icon">' + bookmarkIcon + '</div>' +
+        '<h2>本册还没有已背诵的词</h2>' +
+        '<p>点单词右侧的书签，或在详情页点“标记已背诵”，标记过的词会集中在这里。</p>' +
         '<div class="empty-actions"><button type="button" data-action="clear-filter">查看全部词条</button></div>' +
+      '</div></div>';
+    }
+
+    if (hasFilter) {
+      var reasons = [];
+      if (state.filter === 'memorized') reasons.push('已背诵');
+      if (state.filter === 'unmemorized') reasons.push('未背诵');
+      if (state.unreadOnly) reasons.push('未点读');
+      return '<div class="controls">' + searchEmpty +
+        '<div class="empty-state">' +
+          '<div class="empty-icon">' + bookIcon + '</div>' +
+          '<h2>没有符合条件' + (reasons.length ? '（' + reasons.join('、') + '）' : '') + '的词条</h2>' +
+          '<p>共 ' + book.total + ' 个词条。可以换一个筛选条件，或查看全部词条。</p>' +
+          '<div class="empty-actions">' + clearButtons + '</div>' +
+        '</div>' +
       '</div>';
     }
+
+    if (searchEmpty) return searchEmpty;
 
     return '<div class="empty-state">' +
       '<div class="empty-icon">' + bookIcon + '</div>' +
@@ -344,17 +423,26 @@
 
     var query = state.query.trim();
     var readSet = getReadSet(book.id);
+    var memorizedSet = getMemorizedSet(book.id);
     var visibleIndex = 0;
 
     els.wordList.innerHTML = sections.map(function (section) {
       var readCount = section.unit.words.reduce(function (count, word) {
         return count + (readSet.has(word.id) ? 1 : 0);
       }, 0);
+      var memorizedCount = section.unit.words.reduce(function (count, word) {
+        return count + (memorizedSet.has(word.id) ? 1 : 0);
+      }, 0);
       var rows = section.words.map(function (item) {
-        var row = wordRow(item, visibleIndex, query, readSet);
+        var row = wordRow(item, visibleIndex, query, readSet, memorizedSet);
         visibleIndex += 1;
         return row;
       }).join('');
+
+      var counts = '<span class="read-num">' + readCount + '</span> / ' + section.unit.words.length + ' 已读' +
+        (memorizedCount
+          ? '<span class="count-sep">·</span><span class="memo-num">' + memorizedCount + '</span> 已背'
+          : '');
 
       return '<section class="unit-section" id="' + escapeHtml(section.key) + '" data-unit-key="' + escapeHtml(section.key) + '">' +
         '<div class="unit-head">' +
@@ -362,7 +450,7 @@
             '<span class="unit-index">' + pad2(section.unit.no == null ? section.unitPosition + 1 : section.unit.no) + '</span>' +
             '<h3>' + escapeHtml(section.unit.name) + '</h3>' +
           '</div>' +
-          '<span class="unit-count"><span class="read-num">' + readCount + '</span> / ' + section.unit.words.length + ' 已读</span>' +
+          '<span class="unit-count">' + counts + '</span>' +
         '</div>' +
         '<div class="words">' + rows + '</div>' +
       '</section>';
@@ -379,8 +467,22 @@
     els.progressCount.textContent = String(count);
     els.progressTotal.textContent = '/ ' + book.total;
     els.progressBar.style.width = Math.min(100, (count / total) * 100) + '%';
-    els.resetProgress.hidden = count === 0;
-    if (count === 0) cancelReset();
+
+    var memorized = countMemorized(book);
+    els.memorizedCount.textContent = String(memorized);
+    els.memorizedTotal.textContent = '/ ' + book.total;
+    els.memorizedBar.style.width = Math.min(100, (memorized / total) * 100) + '%';
+    updateMemorizedBlockVisibility();
+
+    els.resetProgress.hidden = memorized === 0;
+    if (memorized === 0) cancelReset();
+  }
+
+  function updateMemorizedBlockVisibility() {
+    var block = document.querySelector('.progress-block--sub');
+    if (block) {
+      block.style.display = state.filter === 'memorized' && !state.query.trim() ? 'none' : '';
+    }
   }
 
   function updatePageChrome(book) {
@@ -392,14 +494,24 @@
     if (query) {
       els.pageTitle.textContent = '搜索结果';
       els.pageDesc.textContent = '匹配“' + query + '”的词条，按教材单元顺序排列。点击单词查看音标、释义与发音。';
-    } else if (state.unreadOnly) {
-      var remaining = book.total - countRead(book);
-      els.pageTitle.textContent = '未读词条';
-      els.pageDesc.textContent = '本册还有 ' + remaining + ' 个词条没有点读，按教材单元顺序排列。';
-    } else {
-      els.pageTitle.textContent = '全部词表';
-      els.pageDesc.textContent = '共 ' + book.total + ' 个词条，按教材单元顺序排列。点击单词查看音标、释义与发音。';
+      return;
     }
+
+    if (state.filter === 'memorized') {
+      els.pageTitle.textContent = state.unreadOnly ? '已背诵 · 未读' : '已背诵词条';
+    } else if (state.filter === 'unmemorized') {
+      els.pageTitle.textContent = state.unreadOnly ? '未背诵 · 未读' : '未背诵词条';
+    } else {
+      els.pageTitle.textContent = state.unreadOnly ? '未读词条' : '全部词表';
+    }
+
+    els.pageDesc.textContent = '共 ' + book.total + ' 个词条，按教材单元顺序排列。点击单词查看音标、释义与发音。';
+  }
+
+  function updateFilterChips() {
+    els.filters.forEach(function (chip) {
+      chip.setAttribute('aria-pressed', chip.dataset.filter === state.filter ? 'true' : 'false');
+    });
   }
 
   function updateSearchSummary(sections) {
@@ -444,6 +556,15 @@
     }
   }
 
+  /* The empty states that combine 搜索 + 筛选 live inside one .controls wrapper,
+     so the delegated click handler has to look one level past #wordList. */
+  function closestAction(target) {
+    var action = target.closest('[data-action]');
+    if (action) return action;
+    var wrapped = target.closest('.controls');
+    return wrapped ? wrapped.querySelector('[data-action]') : null;
+  }
+
   function revealUnitLink(link) {
     var nav = els.unitNav;
     if (!nav || !link) return;
@@ -465,10 +586,12 @@
 
     var sections = buildVisible(book);
     updatePageChrome(book);
+    updateFilterChips();
     renderUnitNav(sections);
     renderWordList(book, sections);
     updateProgress(book);
     updateSearchSummary(sections);
+    updateMemorizedBlockVisibility();
 
     var activeStillVisible = sections.some(function (section) { return section.key === state.activeUnitKey; });
     if (!activeStillVisible) state.activeUnitKey = sections.length ? sections[0].key : null;
@@ -486,6 +609,7 @@
     state.bookId = bookId;
     state.query = '';
     state.unreadOnly = false;
+    state.filter = 'all';
     state.visibleWords = [];
     state.activeUnitKey = null;
     els.searchInput.value = '';
@@ -538,9 +662,10 @@
     if (opts.focus !== false) els.searchInput.focus();
   }
 
-  function clearUnreadFilter() {
+  function clearFilterAll() {
     els.unreadOnly.checked = false;
     state.unreadOnly = false;
+    state.filter = 'all';
     render();
   }
 
@@ -548,7 +673,7 @@
     window.clearTimeout(resetTimer);
     resetArmed = false;
     els.resetProgress.classList.remove('is-armed');
-    els.resetProgress.textContent = '重置进度';
+    els.resetProgress.textContent = '重置背诵';
   }
 
   function armReset() {
@@ -562,11 +687,11 @@
   function resetBookProgress() {
     var book = currentBook();
     if (!book) return;
-    getReadSet(book.id).clear();
-    saveProgress();
+    getMemorizedSet(book.id).clear();
+    saveMemorized();
     cancelReset();
     render();
-    showToast('已重置本册点读进度');
+    showToast('已清空本册背诵标记');
   }
 
   function showToast(message) {
@@ -588,6 +713,83 @@
       return total + (readSet.has(word.id) ? 1 : 0);
     }, 0);
     readNum.textContent = String(count);
+  }
+
+  function updateUnitMemorizedCount(unit, key) {
+    var section = document.getElementById(key);
+    if (!section) return;
+    var counter = section.querySelector('.unit-count');
+    if (!counter) return;
+    var memorizedSet = getMemorizedSet(state.bookId);
+    var readSet = getReadSet(state.bookId);
+    var readCount = unit.words.reduce(function (total, word) {
+      return total + (readSet.has(word.id) ? 1 : 0);
+    }, 0);
+    var memorizedCount = unit.words.reduce(function (total, word) {
+      return total + (memorizedSet.has(word.id) ? 1 : 0);
+    }, 0);
+    counter.innerHTML = '<span class="read-num">' + readCount + '</span> / ' + unit.words.length + ' 已读' +
+      (memorizedCount
+        ? '<span class="count-sep">·</span><span class="memo-num">' + memorizedCount + '</span> 已背'
+        : '');
+  }
+
+  function updateMemorizeButton(item, memorized) {
+    var row = rowById.get(item.word.id);
+    if (row) {
+      row.classList.toggle('memorized', memorized);
+      var button = row.querySelector('.row-memorize');
+      if (button) {
+        button.setAttribute('aria-pressed', memorized ? 'true' : 'false');
+        button.title = memorized ? '已背诵' : '标记已背诵';
+        button.setAttribute('aria-label', item.word.w + (memorized ? '，已背诵，点击取消标记' : '，未背诵，点击标记为已背诵'));
+      }
+    }
+    syncDialogMemorize(item, memorized);
+  }
+
+  function syncDialogMemorize(item, memorized) {
+    if (!item || !els.dialog.open) return;
+    if (dialogIndex < 0 || state.visibleWords[dialogIndex] !== item) return;
+    els.dialogMemorize.setAttribute('aria-pressed', memorized ? 'true' : 'false');
+    els.dialogMemorize.querySelector('.memorize-label').textContent = memorized ? '已背诵' : '标记已背诵';
+  }
+
+  function setMemorized(item, value, announce) {
+    var set = getMemorizedSet(state.bookId);
+    var had = set.has(item.word.id);
+    if (value) set.add(item.word.id); else set.delete(item.word.id);
+    if (had === value) return;
+    saveMemorized();
+
+    var book = currentBook();
+    if (book) updateProgress(book);
+    updateUnitMemorizedCount(item.unit, item.unitKey);
+
+    if (state.filter !== 'all') {
+      render();
+    } else {
+      updateMemorizeButton(item, value);
+    }
+
+    if (announce !== false) {
+      showToast(value ? '已标记为背诵：' + item.word.w : '已取消背诵标记：' + item.word.w);
+    }
+  }
+
+  function toggleMemorize(item, announce) {
+    if (!item) return;
+    setMemorized(item, !getMemorizedSet(state.bookId).has(item.word.id), announce);
+  }
+
+  function applyFilter(filter) {
+    if (filter === state.filter) return;
+    state.filter = filter;
+    render();
+    var tools = document.querySelector('.page-tools');
+    if (tools && tools.getBoundingClientRect().top < 0) {
+      tools.scrollIntoView({ block: 'start', behavior: 'auto' });
+    }
   }
 
   function markRead(item) {
@@ -845,6 +1047,10 @@
     els.dialogPosition.textContent = (dialogIndex + 1) + ' / ' + state.visibleWords.length;
     els.prevWord.disabled = dialogIndex <= 0;
     els.nextWord.disabled = dialogIndex >= state.visibleWords.length - 1;
+
+    var memorized = getMemorizedSet(state.bookId).has(word.id);
+    els.dialogMemorize.setAttribute('aria-pressed', memorized ? 'true' : 'false');
+    els.dialogMemorize.querySelector('.memorize-label').textContent = memorized ? '已背诵' : '标记已背诵';
   }
 
   function openWordAt(index, trigger) {
@@ -969,9 +1175,23 @@
     if (event.target.closest('.summary-clear')) clearSearch();
   });
 
+  /* render() rebuilds the filter chips, so remember which control was clicked
+     and hand the focus back to its replacement after the list is redrawn. */
+  function refocusControl(selector) {
+    var node = document.querySelector(selector);
+    if (node) node.focus();
+  }
+
   els.unreadOnly.addEventListener('change', function () {
     state.unreadOnly = els.unreadOnly.checked;
+    var wasFocused = document.activeElement === els.unreadOnly;
     render();
+    var input = document.getElementById('unreadOnly');
+    if (input !== els.unreadOnly) {
+      input.checked = state.unreadOnly;
+      els.unreadOnly = input;
+    }
+    if (wasFocused) refocusControl('#unreadOnly');
   });
 
   els.resetProgress.addEventListener('click', function () {
@@ -983,11 +1203,17 @@
   });
 
   els.wordList.addEventListener('click', function (event) {
-    var action = event.target.closest('[data-action]');
+    var action = closestAction(event.target);
     if (action) {
       var name = action.dataset.action;
-      if (name === 'clear-search') clearSearch();
-      if (name === 'clear-filter') clearUnreadFilter();
+      if (name === 'clear-search') {
+        clearSearch();
+        els.searchInput.focus();
+      }
+      if (name === 'clear-filter') {
+        clearFilterAll();
+        refocusControl('.filter-chip[data-filter="all"]');
+      }
       if (name === 'reload') window.location.reload();
       return;
     }
@@ -1000,9 +1226,27 @@
 
     var play = event.target.closest('.row-play');
     if (play) {
-      var item = state.visibleWords[Number(play.dataset.playIndex)];
-      playInline(item, play);
+      var playItem = state.visibleWords[Number(play.dataset.playIndex)];
+      playInline(playItem, play);
+      return;
     }
+
+    var memorize = event.target.closest('.row-memorize');
+    if (memorize) {
+      toggleMemorize(state.visibleWords[Number(memorize.dataset.memorizeIndex)]);
+    }
+  });
+
+  els.filters.forEach(function (chip) {
+    chip.addEventListener('click', function () {
+      applyFilter(chip.dataset.filter);
+      refocusControl('.filter-chip[data-filter="' + state.filter + '"]');
+    });
+  });
+
+  els.dialogMemorize.addEventListener('click', function () {
+    if (!dialogCurrent) return;
+    toggleMemorize(dialogCurrent);
   });
 
   els.dialogClose.addEventListener('click', function () {
@@ -1044,7 +1288,7 @@
     dialogCurrent = null;
     dialogIndex = -1;
 
-    if (state.unreadOnly) render();
+    if (state.unreadOnly || state.filter !== 'all') render();
 
     if (lastTrigger && lastTrigger.isConnected) {
       lastTrigger.focus();
