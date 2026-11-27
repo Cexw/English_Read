@@ -141,6 +141,13 @@ a {
   color: var(--muted);
   font-size: 11.5px;
   line-height: 1.4;
+  white-space: nowrap;
+}
+
+@media (max-width: 420px) {
+  .brand-text span {
+    white-space: normal;
+  }
 }
 
 .book-tabs {
