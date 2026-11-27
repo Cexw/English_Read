@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="人教版初中英语单词点读：按教材单元顺序浏览七至九年级词表，查看音标、释义、例句，播放英式与美式发音。">
+  <title>初中英语单词点读 · 人教版</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#wordList">跳到单词列表</a>
+
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">词</span>
+        <div class="brand-text">
+          <strong>初中英语单词点读</strong>
+          <span>人教版 · 七至九年级</span>
+        </div>
+      </div>
+
+      <nav class="book-tabs" id="bookTabs" aria-label="选择教材" role="tablist">
+        <!-- 由 app.js 填充 -->
+      </nav>
+
+      <div class="search-box" role="search">
+        <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="11" cy="11" r="6.5"></circle>
+          <path d="M16 16l4.5 4.5"></path>
+        </svg>
+        <input id="searchInput" type="search" autocomplete="off" spellcheck="false"
+               placeholder="搜索本册单词或释义" aria-label="搜索本册单词或释义">
+        <kbd class="search-key" aria-hidden="true">/</kbd>
+        <button class="search-clear" id="searchClear" type="button" aria-label="清除搜索" hidden>
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15"></path></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="rail" aria-label="教材单元">
+      <div class="rail-head">
+        <p class="rail-label">当前册</p>
+        <h2 id="railBook">七年级上册</h2>
+        <p class="rail-meta" id="railMeta">10 个单元 · 285 个词条</p>
+      </div>
+
+      <nav class="unit-nav" id="unitNav" aria-label="单元目录"></nav>
+
+      <p class="rail-note">
+        词表按教材单元顺序编排。发音由有道词典提供，系统朗读作为备用。
+      </p>
+    </aside>
+
+    <main class="content" id="content">
+      <div class="page-head">
+        <div class="page-heading">
+          <p class="page-kicker" id="pageKicker">七年级上册 · 10 个单元</p>
+          <h1 id="pageTitle">全部词表</h1>
+          <p class="page-desc" id="pageDesc">共 285 个词条，按教材单元顺序排列。点击单词查看音标、释义与发音。</p>
+        </div>
+
+        <div class="page-tools">
+          <div class="progress-block">
+            <div class="progress-text">
+              <span>已点读</span>
+              <strong id="progressCount">0</strong>
+              <span class="progress-total" id="progressTotal">/ 285</span>
+            </div>
+            <div class="progress-track" aria-hidden="true"><i id="progressBar"></i></div>
+          </div>
+          <div class="tools-row">
+            <label class="switch-row" for="unreadOnly">
+              <input id="unreadOnly" type="checkbox">
+              <span class="switch" aria-hidden="true"></span>
+              <span>只看未读</span>
+            </label>
+            <button class="reset-progress" id="resetProgress" type="button" hidden>重置进度</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="search-summary" id="searchSummary" role="status" aria-live="polite" hidden></div>
+
+      <div id="wordList" class="word-list"></div>
+
+      <div class="source-note">
+        <p>词表按人教版新版教材单元顺序整理，英式音标。</p>
+        <p>释义与例句主要来自教材，个别为拓展例句；发音音频来自有道词典，无法加载时可使用系统朗读。</p>
+      </div>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <dialog class="word-dialog" id="wordDialog" aria-labelledby="dialogWord">
+    <div class="dialog-shell" id="dialogShell">
+      <header class="dialog-top">
+        <p id="dialogContext">七年级上册 · Starter Unit 1 · 第 1 词</p>
+        <button class="icon-button dialog-close" id="dialogClose" type="button" aria-label="关闭单词详情">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+        </button>
+      </header>
+
+      <div class="dialog-body">
+        <div class="dialog-word-row">
+          <div class="dialog-word-main">
+            <span class="word-kind" id="dialogKind"></span>
+            <h2 id="dialogWord">good</h2>
+            <p class="dialog-ipa" id="dialogIpa">/ɡʊd/</p>
+          </div>
+          <div class="audio-buttons" aria-label="播放发音">
+            <button class="audio-button" type="button" data-accent="uk">
+              <svg class="audio-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5 10v4h3l4 3V7l-4 3H5z"></path>
+                <path d="M16 9.5a4 4 0 010 5"></path>
+                <path d="M18.5 7a7.5 7.5 0 010 10"></path>
+              </svg>
+              <span class="audio-label"><strong>英式</strong><small>UK</small></span>
+              <span class="audio-bars" aria-hidden="true"><i></i><i></i><i></i></span>
+            </button>
+            <button class="audio-button" type="button" data-accent="us">
+              <svg class="audio-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5 10v4h3l4 3V7l-4 3H5z"></path>
+                <path d="M16 9.5a4 4 0 010 5"></path>
+                <path d="M18.5 7a7.5 7.5 0 010 10"></path>
+              </svg>
+              <span class="audio-label"><strong>美式</strong><small>US</small></span>
+              <span class="audio-bars" aria-hidden="true"><i></i><i></i><i></i></span>
+            </button>
+          </div>
+        </div>
+
+        <p class="audio-status" id="audioStatus" role="status" aria-live="polite"></p>
+
+        <section class="dialog-section" aria-labelledby="meaningLabel">
+          <h3 id="meaningLabel">释义</h3>
+          <div class="sense-list" id="dialogSenses"></div>
+        </section>
+
+        <section class="dialog-section example-section" id="exampleSection" aria-labelledby="exampleLabel">
+          <div class="section-title-row">
+            <h3 id="exampleLabel">课本例句</h3>
+            <span class="example-source" id="exampleSource"></span>
+          </div>
+          <p class="example-en" id="exampleEn"></p>
+          <p class="example-zh" id="exampleZh"></p>
+        </section>
+
+        <section class="dialog-section tip-section" id="tipSection" aria-labelledby="tipLabel" hidden>
+          <h3 id="tipLabel">用法</h3>
+          <p id="dialogTip"></p>
+        </section>
+      </div>
+
+      <footer class="dialog-foot">
+        <button class="step-button" id="prevWord" type="button">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12 4l-6 6 6 6"></path></svg>
+          上一个
+        </button>
+        <span class="dialog-position" id="dialogPosition">1 / 285</span>
+        <button class="step-button" id="nextWord" type="button">
+          下一个
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8 4l6 6-6 6"></path></svg>
+        </button>
+      </footer>
+    </div>
+  </dialog>
+
+  <script src="words.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
