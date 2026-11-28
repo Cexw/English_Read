@@ -288,9 +288,9 @@
     var query = state.query.trim();
 
     els.readCount.textContent = read;
-    els.readTotal.textContent = '/ ' + total;
+    els.readTotal.textContent = total;
     els.memoCount.textContent = memorized;
-    els.memoTotal.textContent = '/ ' + total;
+    els.memoTotal.textContent = total;
     els.reset.hidden = memorized === 0;
     if (!memorized) cancelReset();
 
